@@ -1,0 +1,7 @@
+# Quickshell cache
+.qmlc/
+*.qmlc
+.claude/
+# Logs
+*.log
+*.qslog
