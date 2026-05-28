@@ -8,7 +8,7 @@ A QuickShell-based theme picker for Hyprland rices. Displays a fullscreen overla
 
 Applies a theme's color palette across the entire desktop in one shot:
 
-- **Hyprland** — window border colors (`hypr/colors.conf` + `hyprctl reload`)
+- **Hyprland** — window border colors (`hypr/colors.lua`, with legacy `hypr/colors.conf` support, + `hyprctl reload`)
 - **Hyprlock** — reads `colors.conf` on each launch, no action needed
 - **Swaync** — notification center CSS (`swaync/colors.css` + live reload)
 - **Wlogout** — power menu CSS (`wlogout/colors.css`, read fresh each launch)

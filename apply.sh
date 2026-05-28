@@ -12,7 +12,7 @@
 #   apply.sh                      — re-apply the last used theme
 #
 # Applies the theme's colors to:
-#   - Hyprland window borders  (hypr/colors.conf + hyprctl reload)
+#   - Hyprland window borders  (hypr/colors.lua or legacy hypr/colors.conf + hyprctl reload)
 #   - Hyprlock                 (reads colors.conf on launch, no action needed)
 #   - Swaync                   (swaync/colors.css + swaync-client -rs)
 #   - Wlogout power menu       (wlogout/colors.css — reads fresh on each launch)
@@ -57,12 +57,23 @@ echo "   foreground: #$foreground_hex"
 echo "   accent:     #$accent_hex"
 
 # -------------------------------------------------------
-# Update hypr/colors.conf  ($background, $foreground, $accent)
-# Hyprlock reads this file on each launch, so no restart needed.
+# Update Hyprland colors.
+# Newer hypr-dots uses Lua (colors.lua); older configs used colors.conf.
+# Update whichever files exist so both layouts keep working.
 # -------------------------------------------------------
+COLORS_LUA="$HOME/.config/hypr/colors.lua"
 COLORS_CONF="$HOME/.config/hypr/colors.conf"
 
-_upsert_hypr() {
+_upsert_hypr_lua() {
+    local var="$1" hex="$2"
+    if grep -q "^[[:space:]]*$var = \"rgba" "$COLORS_LUA"; then
+        sed -i "s/^[[:space:]]*$var = \"rgba([0-9a-fA-F]*ff)\",/    $var = \"rgba(${hex}ff)\",/" "$COLORS_LUA"
+    else
+        sed -i "/^}/i\    $var = \"rgba(${hex}ff)\"," "$COLORS_LUA"
+    fi
+}
+
+_upsert_hypr_conf() {
     local var="$1" hex="$2"
     if grep -q "^\$$var = rgba" "$COLORS_CONF"; then
         sed -i "s/^\$$var = rgba([0-9a-fA-F]*)$/\$$var = rgba(${hex}ff)/" "$COLORS_CONF"
@@ -71,9 +82,28 @@ _upsert_hypr() {
     fi
 }
 
-_upsert_hypr background "$background_hex"
-_upsert_hypr foreground "$foreground_hex"
-_upsert_hypr accent     "$accent_hex"
+if [ -f "$COLORS_LUA" ]; then
+    _upsert_hypr_lua background "$background_hex"
+    _upsert_hypr_lua foreground "$foreground_hex"
+    _upsert_hypr_lua accent     "$accent_hex"
+fi
+
+if [ -f "$COLORS_CONF" ]; then
+    _upsert_hypr_conf background "$background_hex"
+    _upsert_hypr_conf foreground "$foreground_hex"
+    _upsert_hypr_conf accent     "$accent_hex"
+fi
+
+if [ ! -f "$COLORS_LUA" ] && [ ! -f "$COLORS_CONF" ]; then
+    mkdir -p "$HOME/.config/hypr"
+    cat > "$COLORS_LUA" <<EOF
+return {
+    background = \"rgba(${background_hex}ff)\",
+    foreground = \"rgba(${foreground_hex}ff)\",
+    accent = \"rgba(${accent_hex}ff)\",
+}
+EOF
+fi
 
 # Reload hyprland so window borders pick up the new colors
 hyprctl reload
