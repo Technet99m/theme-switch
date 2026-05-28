@@ -100,7 +100,7 @@ ShellRoot {
         ScriptAction {
             script: {
                 if (root.pendingThemePath !== "") {
-                    applyProc.command = [root.homeDir + "/dev/rice/theme-switch/apply.sh",
+                    applyProc.command = [String(Qt.resolvedUrl("apply.sh")).replace("file://", ""),
                                          root.pendingThemePath]
                     applyProc.running = true
                 } else {

@@ -17,12 +17,36 @@
 #   - Swaync                   (swaync/colors.css + swaync-client -rs)
 #   - Wlogout power menu       (wlogout/colors.css — reads fresh on each launch)
 #   - Rofi launcher            (rofi/colors.rasi — reads fresh on each launch)
-#   - Wallpaper                (swww direct — bypasses matugen to keep theme colors)
+#   - Wallpaper                (awww/swww direct — bypasses matugen to keep theme colors)
 #   - Kitty terminal           (kitty/colors-theme.conf + live reload via remote control)
 # Then saves the active theme and launches waybar via launch.sh.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CURRENT_THEME_FILE="$HOME/.config/tc99m/current-theme"
+
+find_bin() {
+    local name="$1"
+    local candidate=""
+
+    if candidate="$(command -v "$name" 2>/dev/null)"; then
+        printf '%s\n' "$candidate"
+        return 0
+    fi
+
+    for candidate in \
+        "/run/current-system/sw/bin/$name" \
+        "/usr/bin/$name" \
+        "/usr/local/bin/$name" \
+        "$HOME/.nix-profile/bin/$name"
+    do
+        if [ -x "$candidate" ]; then
+            printf '%s\n' "$candidate"
+            return 0
+        fi
+    done
+
+    return 1
+}
 
 # -------------------------------------------------------
 # Resolve theme file
@@ -35,7 +59,7 @@ fi
 
 if [ -z "$config_sh" ] || [ ! -f "$config_sh" ]; then
     echo ":: apply: no theme file found — pass a path or set $CURRENT_THEME_FILE"
-    exit 0
+    exit 1
 fi
 
 source "$config_sh"
@@ -45,7 +69,7 @@ accent_hex="${accent_hex:-$foreground_hex}"
 
 if [ -z "$background_hex" ] || [ -z "$foreground_hex" ]; then
     echo ":: apply: background_hex / foreground_hex not set in $config_sh — skipping color sync"
-    exit 0
+    exit 1
 fi
 
 # Derive waybar theme folder from theme filename (glass-purple.sh → glass-purple)
@@ -151,7 +175,7 @@ sed -i "s/    background: rgba([^)]*);/    background: ${rofi_background_rgba};/
 
 # -------------------------------------------------------
 # Switch wallpaper if the theme specifies one.
-# Calls swww directly — bypasses wallpaper.sh/matugen so
+# Calls awww/swww directly — bypasses wallpaper.sh/matugen so
 # our manual theme colors are not overwritten.
 # Blur/cache regeneration runs in the background so
 # waybar launches immediately.
@@ -160,11 +184,26 @@ if [ -n "$theme_wallpaper" ] && [ -f "$theme_wallpaper" ]; then
     echo ":: Switching wallpaper: $theme_wallpaper"
     CACHE_DIR="$HOME/.cache/ml4w/hyprland-dotfiles"
     BLUR=$(cat "$HOME/.config/ml4w/settings/blur.sh" 2>/dev/null || echo "50x30")
+    mkdir -p "$CACHE_DIR"
 
-    swww img "$theme_wallpaper" \
-        --transition-type any \
-        --transition-duration 2 \
-        --transition-fps 60
+    WALLPAPER_BIN=""
+    if WALLPAPER_BIN="$(find_bin awww)"; then
+        :
+    elif WALLPAPER_BIN="$(find_bin swww)"; then
+        :
+    fi
+
+    if [ -n "$WALLPAPER_BIN" ]; then
+        if ! "$WALLPAPER_BIN" img "$theme_wallpaper" \
+            --transition-type any \
+            --transition-duration 2 \
+            --transition-fps 60
+        then
+            echo ":: apply: failed to switch wallpaper with $WALLPAPER_BIN" >&2
+        fi
+    else
+        echo ":: apply: neither awww nor swww was found; wallpaper was not changed" >&2
+    fi
 
     echo "$theme_wallpaper" > "$CACHE_DIR/current_wallpaper"
 
