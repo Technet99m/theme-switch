@@ -14,15 +14,21 @@ Applies a theme's color palette across the entire desktop in one shot:
 - **Wlogout** — power menu CSS (`wlogout/colors.css`, read fresh each launch)
 - **Rofi** — launcher colors (`rofi/colors.rasi`, read fresh each launch)
 - **Kitty** — terminal accent colors via remote control (live reload all instances)
-- **Wallpaper** — switched via `swww` with a smooth transition
+- **Wallpaper** — switched via `awww` (or legacy `swww`) with a smooth transition
+- **[mybar](https://github.com/technet99m/mybar)** — restarted after applying (expected next to this repo as `../mybar`, override with `MYBAR_LAUNCH`)
+
+Apps whose config directory doesn't exist are skipped, so a partial setup still works.
 
 ## Dependencies
 
+The easiest way to install everything (including mybar and quick-nm) is mybar's [bootstrap script](https://github.com/technet99m/mybar#quick-setup-fresh-arch-machine).
+
 - [QuickShell](https://quickshell.outfoxxed.me/) — shell UI framework (QML-based)
-- [swww](https://github.com/LGS-Games/swww) — wallpaper daemon
+- `qt6-5compat` — Qt5Compat.GraphicalEffects used by the picker
+- [awww](https://codeberg.org/LGFae/awww) (formerly swww) — wallpaper daemon
 - `hyprctl` — Hyprland IPC
 - `swaync-client` — SwayNC notification center
-- `kitty` with remote control enabled
+- `kitty` with remote control enabled (`allow_remote_control yes`, `listen_on unix:/tmp/kitty-{kitty_pid}`)
 - `imagemagick` (`magick`) — for blurred wallpaper cache generation
 
 ## Structure
@@ -78,7 +84,7 @@ quickshell -p /path/to/theme-switch
 ./apply.sh
 ```
 
-The active theme is persisted to `~/.config/tc99m/current-theme`.
+The active theme is persisted to `~/.config/tc99m/current-theme`. If nothing is saved yet (or the saved theme file was removed), `glass-purple` is applied.
 
 ## How the picker works
 

@@ -19,10 +19,13 @@
 #   - Rofi launcher            (rofi/colors.rasi — reads fresh on each launch)
 #   - Wallpaper                (awww/swww direct — bypasses matugen to keep theme colors)
 #   - Kitty terminal           (kitty/colors-theme.conf + live reload via remote control)
-# Then saves the active theme and launches waybar via launch.sh.
+# Then saves the active theme and (re)starts mybar via its launch.sh.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CURRENT_THEME_FILE="$HOME/.config/tc99m/current-theme"
+DEFAULT_THEME="$SCRIPT_DIR/themes/glass-purple.sh"
+# mybar is expected to be cloned next to theme-switch (see mybar/bootstrap.sh)
+MYBAR_LAUNCH="${MYBAR_LAUNCH:-$(dirname "$SCRIPT_DIR")/mybar/launch.sh}"
 
 find_bin() {
     local name="$1"
@@ -55,6 +58,16 @@ if [ -n "$1" ] && [ -f "$1" ]; then
     config_sh="$1"
 elif [ -f "$CURRENT_THEME_FILE" ]; then
     config_sh=$(cat "$CURRENT_THEME_FILE")
+fi
+
+# Fresh machine or the saved theme was deleted — fall back to a bundled theme
+if [ -z "$config_sh" ] || [ ! -f "$config_sh" ]; then
+    [ -n "$config_sh" ] && echo ":: apply: saved theme $config_sh not found, using default"
+    if [ -f "$DEFAULT_THEME" ]; then
+        config_sh="$DEFAULT_THEME"
+    else
+        config_sh=$(ls "$SCRIPT_DIR"/themes/*.sh 2>/dev/null | head -1)
+    fi
 fi
 
 if [ -z "$config_sh" ] || [ ! -f "$config_sh" ]; then
@@ -118,19 +131,26 @@ if [ -f "$COLORS_CONF" ]; then
     _upsert_hypr_conf accent     "$accent_hex"
 fi
 
+# Neither exists (fresh machine): create both — Lua for Hyprland,
+# colors.conf for hyprlock which still sources it.
 if [ ! -f "$COLORS_LUA" ] && [ ! -f "$COLORS_CONF" ]; then
     mkdir -p "$HOME/.config/hypr"
     cat > "$COLORS_LUA" <<EOF
 return {
-    background = \"rgba(${background_hex}ff)\",
-    foreground = \"rgba(${foreground_hex}ff)\",
-    accent = \"rgba(${accent_hex}ff)\",
+    background = "rgba(${background_hex}ff)",
+    foreground = "rgba(${foreground_hex}ff)",
+    accent = "rgba(${accent_hex}ff)",
 }
+EOF
+    cat > "$COLORS_CONF" <<EOF
+\$background = rgba(${background_hex}ff)
+\$foreground = rgba(${foreground_hex}ff)
+\$accent = rgba(${accent_hex}ff)
 EOF
 fi
 
 # Reload hyprland so window borders pick up the new colors
-hyprctl reload
+[ -n "$HYPRLAND_INSTANCE_SIGNATURE" ] && hyprctl reload >/dev/null
 
 # -------------------------------------------------------
 # Update swaync/colors.css  (@background, @foreground, @accent)
@@ -139,19 +159,23 @@ SWAYNC_COLORS="$HOME/.config/swaync/colors.css"
 
 _upsert_css() {
     local file="$1" var="$2" hex="$3"
-    if grep -q "@define-color $var " "$file"; then
+    if grep -q "@define-color $var " "$file" 2>/dev/null; then
         sed -i "s/@define-color $var #[0-9a-fA-F]*;/@define-color $var #${hex};/" "$file"
     else
         echo "@define-color $var #${hex};" >> "$file"
     fi
 }
 
-_upsert_css "$SWAYNC_COLORS" background "$background_hex"
-_upsert_css "$SWAYNC_COLORS" foreground "$foreground_hex"
-_upsert_css "$SWAYNC_COLORS" accent     "$accent_hex"
+# Only touch app configs whose directory exists — apps that aren't
+# installed/configured on this machine are skipped.
+if [ -d "$(dirname "$SWAYNC_COLORS")" ]; then
+    _upsert_css "$SWAYNC_COLORS" background "$background_hex"
+    _upsert_css "$SWAYNC_COLORS" foreground "$foreground_hex"
+    _upsert_css "$SWAYNC_COLORS" accent     "$accent_hex"
 
-# Reload swaync CSS
-swaync-client -rs
+    # Reload swaync CSS
+    command -v swaync-client >/dev/null && swaync-client -rs >/dev/null 2>&1
+fi
 
 # -------------------------------------------------------
 # Update wlogout/colors.css  (@background, @foreground, @accent)
@@ -159,9 +183,11 @@ swaync-client -rs
 # -------------------------------------------------------
 WLOGOUT_COLORS="$HOME/.config/wlogout/colors.css"
 
-_upsert_css "$WLOGOUT_COLORS" background "$background_hex"
-_upsert_css "$WLOGOUT_COLORS" foreground "$foreground_hex"
-_upsert_css "$WLOGOUT_COLORS" accent     "$accent_hex"
+if [ -d "$(dirname "$WLOGOUT_COLORS")" ]; then
+    _upsert_css "$WLOGOUT_COLORS" background "$background_hex"
+    _upsert_css "$WLOGOUT_COLORS" foreground "$foreground_hex"
+    _upsert_css "$WLOGOUT_COLORS" accent     "$accent_hex"
+fi
 
 # -------------------------------------------------------
 # Update rofi/colors.rasi  (foreground, accent, background)
@@ -169,9 +195,21 @@ _upsert_css "$WLOGOUT_COLORS" accent     "$accent_hex"
 # -------------------------------------------------------
 ROFI_COLORS="$HOME/.config/rofi/colors.rasi"
 
-sed -i "s/    foreground: #[0-9a-fA-F]*/    foreground: #${foreground_hex}/" "$ROFI_COLORS"
-sed -i "s/    accent: #[0-9a-fA-F]*/    accent: #${accent_hex}/" "$ROFI_COLORS"
-sed -i "s/    background: rgba([^)]*);/    background: ${rofi_background_rgba};/" "$ROFI_COLORS"
+# Replace "    key: value;" inside the "* {" block, or insert it if missing
+_upsert_rasi() {
+    local key="$1" value="$2"
+    if grep -q "^    $key: " "$ROFI_COLORS"; then
+        sed -i "s/^    $key: .*;/    $key: ${value};/" "$ROFI_COLORS"
+    else
+        sed -i "0,/^\* {/s//* {\n    $key: ${value};/" "$ROFI_COLORS"
+    fi
+}
+
+if [ -f "$ROFI_COLORS" ]; then
+    _upsert_rasi foreground "#${foreground_hex}"
+    _upsert_rasi accent     "#${accent_hex}"
+    [ -n "$rofi_background_rgba" ] && _upsert_rasi background "$rofi_background_rgba"
+fi
 
 # -------------------------------------------------------
 # Switch wallpaper if the theme specifies one.
@@ -209,7 +247,7 @@ if [ -n "$theme_wallpaper" ] && [ -f "$theme_wallpaper" ]; then
 
     # Regenerate blurred/square/rasi cache in the background
     BLURRED_THEME="$CACHE_DIR/blurred_${theme_id}.png"
-    (
+    command -v magick >/dev/null && (
         # Only rebuild the blur if missing or source wallpaper is newer than cache
         if [ ! -f "$BLURRED_THEME" ] || [ "$theme_wallpaper" -nt "$BLURRED_THEME" ]; then
             magick "$theme_wallpaper" -resize 75% "$BLURRED_THEME"
@@ -230,6 +268,7 @@ fi
 # -------------------------------------------------------
 KITTY_THEME="$HOME/.config/kitty/colors-theme.conf"
 
+if [ -d "$(dirname "$KITTY_THEME")" ]; then
 cat > "$KITTY_THEME" << EOF
 # Theme accent colors — managed by apply.sh, do not edit manually
 cursor                #${accent_hex}
@@ -247,6 +286,7 @@ EOF
 for sock in /tmp/kitty-[0-9]*; do
     [ -S "$sock" ] && kitty @ --to "unix:$sock" set-colors --all "$KITTY_THEME" 2>/dev/null || true
 done
+fi
 
 # -------------------------------------------------------
 # Persist the active theme
@@ -257,4 +297,8 @@ echo "$config_sh" > "$CURRENT_THEME_FILE"
 # -------------------------------------------------------
 # Restart mybar
 # -------------------------------------------------------
-setsid "$HOME/dev/rice/mybar/launch.sh" >/dev/null 2>&1 &
+if [ -x "$MYBAR_LAUNCH" ]; then
+    setsid "$MYBAR_LAUNCH" >/dev/null 2>&1 &
+else
+    echo ":: apply: mybar not found at $MYBAR_LAUNCH — bar not (re)started" >&2
+fi
